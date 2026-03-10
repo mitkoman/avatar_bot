@@ -786,6 +786,46 @@ def web_search(query: str) -> str:
 
 
 @tool
+def book_flight(
+    airline: str,
+    origin: str,
+    destination: str,
+    departure_date: str,
+    departure_time: str,
+    arrival_time: str,
+    price: str,
+    seat_preference: str = "window",
+    luggage: str = "hand luggage only",
+    passenger_name: str = "Guest",
+) -> str:
+    """Simulate a flight booking after the user has confirmed seat and luggage preferences.
+    Call this ONLY after the user has chosen both seat type and luggage option.
+    Returns a booking confirmation with a reference number."""
+    import random, string
+    ref = "TB" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    luggage_fee = {"hand luggage only": 0, "+1 checked bag 23kg": 35, "+2 checked bags 23kg": 60}
+    fee = luggage_fee.get(luggage, 0)
+    try:
+        base_price = float(price.replace("EUR","").replace("€","").strip())
+        total = f"{base_price + fee:.2f} EUR"
+    except Exception:
+        total = price
+    return json.dumps({
+        "action":       "flight_booked",
+        "booking_ref":  ref,
+        "airline":      airline,
+        "route":        f"{origin} → {destination}",
+        "departure":    f"{departure_date} at {departure_time}",
+        "arrival":      arrival_time,
+        "seat":         seat_preference,
+        "luggage":      luggage,
+        "total_price":  total,
+        "passenger":    passenger_name,
+        "status":       "CONFIRMED",
+    }, ensure_ascii=False)
+
+
+@tool
 def book_restaurant(restaurant_name: str, location: str, date: str = "", party_size: str = "2") -> str:
     """Generate booking options for a restaurant via TheFork and Quandoo widgets.
     restaurant_name: name of the restaurant
@@ -972,6 +1012,7 @@ _TOOL_LABELS = {
     "get_place_reviews":      "⭐ Reviews",
     "get_tripadvisor_reviews":"⭐ Reviews",
     "search_flights":         "✈️ Flights search",
+    "book_flight":            "🎫 Booking flight",
     "search_hotels":          "🏨 Hotels search",
     "web_search":             "🌐 Web search",
     "book_restaurant":        "📅 Restaurant booking",
@@ -1005,6 +1046,28 @@ You help users:
 - Get real transit/bus/metro/walking routes with duration and steps: use get_transit_directions(origin, destination, mode). Present results clearly: total time, each step with mode icon (🚶 walking, 🚌 bus, 🚇 metro, 🚆 train), line name, stops. Always include the Google Maps link at the end.
 - Add restaurant bookings or travel activities to Google Calendar (use add_to_calendar when user asks to "add to calendar", "save this", "book" with a date). After calling the tool, just confirm the event was created — do NOT include any URL or link in your text, the UI shows the calendar button automatically.
 - Search for flights: use search_flights(origin, destination, departure_date, return_date, adults, children, allow_overnight). Present results clearly: price, airline logo, baggage allowance, cabin class, departure/arrival times, duration, stops. Mention one-way or round trip. Include the booking link.
+
+FLIGHT BOOKING FLOW — follow these steps every time you show flight results:
+Step 1 — After showing flights, always end with: "Would you like me to book one of these flights? Just say yes and I'll get you set up! ✈️"
+Step 2 — If user says yes (or confirms a flight): suggest seat options — present exactly these 4 choices:
+  • 🪟 Window seat — great view, lean against the wall
+  • 💺 Aisle seat — easy access, stretch your legs
+  • 🧍 Middle seat — budget-friendly, sit next to friends
+  • 🦵 Extra legroom — emergency exit row, more space
+  Ask: "Which seat type would you prefer?"
+Step 3 — After user picks a seat: suggest luggage options — present exactly these 3 choices:
+  • 🎒 Hand luggage only — included in price
+  • 🧳 +1 checked bag 23kg — +€35
+  • 🧳🧳 +2 checked bags 23kg — +€60
+  Ask: "How much luggage will you be bringing?"
+Step 4 — After user picks luggage: call book_flight() with all confirmed details. Then show a confirmation:
+  ✅ Booking Confirmed! Reference: [REF]
+  ✈️ [airline] | [origin] → [destination]
+  🕐 Departs [time] · Arrives [arrival]
+  💺 Seat: [seat] | 🧳 Luggage: [luggage]
+  💶 Total: [price]
+  Have a great trip! 🎉
+Step 5 — After booking confirmation: automatically suggest 3 must-see places or top restaurants in the destination city. Say: "Now that you're heading to [city], here are some great spots to check out! 🗺️" then list them.
 - Search for hotels: use search_hotels(city, check_in, check_out, adults, hotel_name, max_price, ratings, board_type, amenities, best_rated). Works for cities without airports too (e.g. Bansko). Present each hotel with name, star rating, room type, board basis, total price and a booking link. Note total nights.
 - Search the web for real-time info: use web_search(query) for visa requirements, travel advisories, current events, safety info, entry restrictions, local tips or anything time-sensitive not covered by other tools.
 
@@ -1031,7 +1094,7 @@ If search returns JSON data, present it nicely — don't show raw JSON to the us
 CRITICAL: Do NOT include URLs, markdown links [text](url), or image syntax ![](url) in your text responses.
 The UI already shows maps, photos and links automatically via place cards. Just mention place names and details in plain text."""
 
-tools = [plan_trip, search_places, get_place_details, get_place_reviews, get_tripadvisor_reviews, search_flights, search_hotels, web_search, book_restaurant, get_directions, get_transit_directions, add_to_calendar]
+tools = [plan_trip, search_places, get_place_details, get_place_reviews, get_tripadvisor_reviews, search_flights, book_flight, search_hotels, web_search, book_restaurant, get_directions, get_transit_directions, add_to_calendar]
 
 prompt = ChatPromptTemplate.from_messages([
     SystemMessage(content=SYSTEM_PROMPT),
