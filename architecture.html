@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Azure Talking Avatar — Architecture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0e0b23;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #e2e0f0;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #8b82b5;
+    margin-bottom: 40px;
+  }
+
+  .diagram {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── Row of boxes ── */
+  .row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    justify-content: center;
+  }
+
+  /* ── Box ── */
+  .box {
+    background: #13102e;
+    border: 1.5px solid #2a2550;
+    border-radius: 14px;
+    padding: 18px 20px;
+    min-width: 160px;
+    text-align: center;
+    position: relative;
+    flex: 1;
+    max-width: 200px;
+  }
+  .box.highlight {
+    border-color: #F47920;
+    box-shadow: 0 0 20px rgba(244,121,32,0.2);
+  }
+  .box.azure {
+    border-color: #0078d4;
+    box-shadow: 0 0 20px rgba(0,120,212,0.15);
+  }
+  .box.agent {
+    border-color: #6c63ff;
+    box-shadow: 0 0 20px rgba(108,99,255,0.15);
+  }
+  .box-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .box-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .box-sub {
+    font-size: 11px;
+    color: #8b82b5;
+    line-height: 1.4;
+  }
+  .box-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    margin-top: 6px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-orange { background: rgba(244,121,32,0.2); color: #F47920; border: 1px solid rgba(244,121,32,0.35); }
+  .badge-blue   { background: rgba(0,120,212,0.2);  color: #4ea8e8; border: 1px solid rgba(0,120,212,0.35); }
+  .badge-purple { background: rgba(108,99,255,0.2); color: #a78bfa; border: 1px solid rgba(108,99,255,0.35); }
+  .badge-green  { background: rgba(34,197,94,0.2);  color: #4ade80; border: 1px solid rgba(34,197,94,0.35); }
+
+  /* ── Arrows ── */
+  .arrow-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0;
+    padding: 4px 0;
+    position: relative;
+  }
+
+  .arrow-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    max-width: 200px;
+    gap: 2px;
+  }
+
+  .arrow-line {
+    width: 2px;
+    height: 28px;
+    background: linear-gradient(to bottom, #2a2550, #4a4070);
+    position: relative;
+  }
+  .arrow-line::after {
+    content: "";
+    position: absolute;
+    bottom: -1px; left: 50%; transform: translateX(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid #4a4070;
+  }
+  .arrow-line.orange { background: linear-gradient(to bottom, #F47920, #c85f10); }
+  .arrow-line.orange::after { border-top-color: #c85f10; }
+  .arrow-line.blue   { background: linear-gradient(to bottom, #0078d4, #005fa3); }
+  .arrow-line.blue::after { border-top-color: #005fa3; }
+  .arrow-line.purple { background: linear-gradient(to bottom, #6c63ff, #4a42c0); }
+  .arrow-line.purple::after { border-top-color: #4a42c0; }
+  .arrow-line.webrtc { background: linear-gradient(to bottom, #22c55e, #15803d); }
+  .arrow-line.webrtc::after { border-top-color: #15803d; }
+  .arrow-line.bidirectional::before {
+    content: "";
+    position: absolute;
+    top: -1px; left: 50%; transform: translateX(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 7px solid #F47920;
+  }
+
+  .arrow-label {
+    font-size: 10px;
+    color: #8b82b5;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .arrow-label.orange { color: #F47920; }
+  .arrow-label.blue   { color: #4ea8e8; }
+  .arrow-label.purple { color: #a78bfa; }
+  .arrow-label.webrtc { color: #4ade80; }
+
+  /* ── Horizontal connector ── */
+  .h-connector {
+    flex: 1;
+    max-width: 60px;
+    display: flex;
+    align-items: center;
+    padding-top: 28px;
+  }
+  .h-line {
+    width: 100%; height: 2px;
+    background: #2a2550;
+    position: relative;
+  }
+  .h-line.orange { background: linear-gradient(to right, #F47920, #c85f10); }
+  .h-line.blue   { background: #0078d4; }
+  .h-line.purple { background: #6c63ff; }
+  .h-line::after {
+    content: "";
+    position: absolute;
+    right: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid #2a2550;
+  }
+  .h-line.orange::after { border-left-color: #c85f10; }
+  .h-line.blue::after   { border-left-color: #0078d4; }
+  .h-line.purple::after { border-left-color: #6c63ff; }
+
+  /* ── Spacer between boxes in a row ── */
+  .row-gap { width: 16px; flex-shrink: 0; }
+
+  /* ── Section label ── */
+  .section-label {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #5a5380;
+    margin-bottom: 12px;
+    margin-top: 24px;
+  }
+
+  /* ── Wide box (Flask) ── */
+  .box.wide { max-width: 440px; flex: none; width: 440px; }
+
+  /* ── Azure group ── */
+  .azure-group {
+    border: 1.5px solid rgba(0,120,212,0.35);
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(0,120,212,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .azure-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #4ea8e8;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .azure-inner-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  .box.azure-sm {
+    border-color: rgba(0,120,212,0.4);
+    min-width: 140px;
+    max-width: 180px;
+    flex: 1;
+  }
+
+  /* ── Agent group ── */
+  .agent-group {
+    border: 1.5px solid rgba(108,99,255,0.35);
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(108,99,255,0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .agent-group-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #a78bfa;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .agent-inner-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+  }
+  .box.agent-sm {
+    border-color: rgba(108,99,255,0.4);
+    min-width: 130px;
+    max-width: 170px;
+    flex: 1;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 36px;
+    padding: 16px 20px;
+    background: #13102e;
+    border: 1px solid #2a2550;
+    border-radius: 12px;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #8b82b5;
+  }
+  .legend-line {
+    width: 28px; height: 2px;
+    border-radius: 2px;
+  }
+
+  /* ── Flow notes ── */
+  .flow-notes {
+    max-width: 960px;
+    margin: 24px auto 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .note {
+    background: #13102e;
+    border: 1px solid #2a2550;
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .note-num {
+    font-size: 11px;
+    font-weight: 700;
+    color: #F47920;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .note-text {
+    font-size: 12px;
+    color: #8b82b5;
+    line-height: 1.5;
+  }
+  .note-text code {
+    color: #a78bfa;
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 11px;
+    background: rgba(108,99,255,0.12);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Azure Talking Avatar — Architecture</h1>
+<p class="subtitle">avatartravel.azurewebsites.net &nbsp;&middot;&nbsp; avatar_azure.py</p>
+
+<div class="diagram">
+
+  <!-- BROWSER -->
+  <div class="section-label">Client</div>
+  <div class="row">
+    <div class="box highlight wide">
+      <span class="box-icon">&#128241;</span>
+      <div class="box-title">Browser</div>
+      <div class="box-sub">Azure Speech SDK (JS) &nbsp;&middot;&nbsp; WebRTC<br>SpeechRecognition API &nbsp;&middot;&nbsp; Web Audio API</div>
+      <span class="box-badge badge-orange">HTML / JS</span>
+    </div>
+  </div>
+
+  <!-- ARROW down to Flask -->
+  <div class="arrow-row">
+    <div class="arrow-col">
+      <div class="arrow-line bidirectional orange" style="height:36px"></div>
+      <div class="arrow-label orange">HTTP REST &nbsp;/speech-token &nbsp;/ice-token &nbsp;/chat</div>
+    </div>
+  </div>
+
+  <!-- FLASK -->
+  <div class="section-label">Backend &nbsp;&mdash;&nbsp; Azure App Service (avatartravel)</div>
+  <div class="row">
+    <div class="box highlight wide">
+      <span class="box-icon">&#128013;</span>
+      <div class="box-title">Flask &nbsp;(avatar_azure.py)</div>
+      <div class="box-sub">
+        <code style="font-size:11px;font-family:monospace;color:#a78bfa">GET /speech-token</code> &nbsp; Auth token proxy<br>
+        <code style="font-size:11px;font-family:monospace;color:#a78bfa">GET /ice-token</code> &nbsp;&nbsp;&nbsp;&nbsp; TURN creds proxy<br>
+        <code style="font-size:11px;font-family:monospace;color:#a78bfa">POST /chat</code> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; LangChain agent<br>
+        <code style="font-size:11px;font-family:monospace;color:#a78bfa">GET /avatar-img</code> &nbsp; Static placeholder
+      </div>
+      <span class="box-badge badge-orange">Gunicorn · Docker · linux/amd64</span>
+    </div>
+  </div>
+
+  <!-- TWO ARROWS: left to Azure, right to Agent -->
+  <div class="arrow-row" style="max-width:680px;margin:0 auto;width:100%;gap:20px">
+    <div class="arrow-col">
+      <div class="arrow-line blue" style="height:36px"></div>
+      <div class="arrow-label blue">STS + ICE token requests</div>
+    </div>
+    <div class="arrow-col">
+      <div class="arrow-line purple" style="height:36px"></div>
+      <div class="arrow-label purple">/chat invoke</div>
+    </div>
+  </div>
+
+  <!-- AZURE GROUP + AGENT GROUP side by side -->
+  <div style="display:flex;gap:16px;max-width:960px;margin:0 auto;width:100%;flex-wrap:wrap;justify-content:center">
+
+    <!-- Azure Group -->
+    <div class="azure-group" style="flex:1;min-width:280px">
+      <div class="azure-group-label">&#9729; Azure Cognitive Services</div>
+      <div class="azure-inner-row">
+        <div class="box azure-sm">
+          <span class="box-icon">&#128273;</span>
+          <div class="box-title">STS Token</div>
+          <div class="box-sub">Issues 10-min auth token</div>
+          <span class="box-badge badge-blue">/sts/v1.0/issueToken</span>
+        </div>
+        <div class="box azure-sm">
+          <span class="box-icon">&#127760;</span>
+          <div class="box-title">ICE / TURN Relay</div>
+          <div class="box-sub">WebRTC NAT traversal credentials</div>
+          <span class="box-badge badge-blue">/avatar/relay/token/v1</span>
+        </div>
+        <div class="box azure-sm">
+          <span class="box-icon">&#127910;</span>
+          <div class="box-title">Avatar Stream</div>
+          <div class="box-sub">Continuous video + audio via WebRTC</div>
+          <span class="box-badge badge-blue">Lisa · casual-sitting</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Group -->
+    <div class="agent-group" style="flex:1;min-width:280px">
+      <div class="agent-group-label">&#129302; LangChain Agent</div>
+      <div class="agent-inner-row">
+        <div class="box agent-sm">
+          <span class="box-icon">&#129504;</span>
+          <div class="box-title">OpenAI LLM</div>
+          <div class="box-sub">GPT-4o with session memory</div>
+          <span class="box-badge badge-purple">per session_id</span>
+        </div>
+        <div class="box agent-sm">
+          <span class="box-icon">&#128205;</span>
+          <div class="box-title">Google Places</div>
+          <div class="box-sub">Restaurants, hotels, attractions</div>
+          <span class="box-badge badge-purple">Maps API</span>
+        </div>
+        <div class="box agent-sm">
+          <span class="box-icon">&#127758;</span>
+          <div class="box-title">Geocoding</div>
+          <div class="box-sub">lat/lng → city name injection</div>
+          <span class="box-badge badge-purple">Maps API</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- WebRTC arrow from Azure back to Browser -->
+  <div class="arrow-row" style="max-width:680px;margin:0 auto;width:100%;gap:20px">
+    <div class="arrow-col" style="max-width:340px">
+      <div class="arrow-line webrtc" style="height:36px;transform:scaleY(-1)"></div>
+      <div class="arrow-label webrtc">WebRTC video + audio direct to browser (bypasses Flask)</div>
+    </div>
+    <div class="arrow-col">
+      <div class="arrow-line purple" style="height:36px;transform:scaleY(-1)"></div>
+      <div class="arrow-label purple">reply text returned</div>
+    </div>
+  </div>
+
+</div><!-- end .diagram -->
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-line" style="background:#F47920"></div>
+    HTTP REST (browser ↔ Flask)
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:#0078d4"></div>
+    Azure API calls (Flask → Azure)
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:#22c55e"></div>
+    WebRTC stream (Azure → Browser, direct)
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:#6c63ff"></div>
+    LangChain agent (Flask → OpenAI / Places)
+  </div>
+</div>
+
+<!-- FLOW NOTES -->
+<div class="flow-notes">
+  <div class="note">
+    <div class="note-num">Step 1 — Auth</div>
+    <div class="note-text">Browser fetches <code>/speech-token</code> and <code>/ice-token</code>. Flask proxies both to Azure, keeping the Speech Key server-side only.</div>
+  </div>
+  <div class="note">
+    <div class="note-num">Step 2 — WebRTC Setup</div>
+    <div class="note-text">Browser creates <code>RTCPeerConnection</code> with Azure TURN servers, adds recv-only transceivers, then calls <code>startAvatarAsync(peerConn)</code>.</div>
+  </div>
+  <div class="note">
+    <div class="note-num">Step 3 — Live Stream</div>
+    <div class="note-text">Azure streams video + audio directly to the browser. Flask is not involved. The <code>&lt;video&gt;</code> element shows Lisa continuously once <code>onplaying</code> fires.</div>
+  </div>
+  <div class="note">
+    <div class="note-num">Step 4 — Chat</div>
+    <div class="note-text">User speaks (browser STT) or types. Browser posts to <code>/chat</code>. Flask injects date + location, runs the LangChain agent, returns reply text.</div>
+  </div>
+  <div class="note">
+    <div class="note-num">Step 5 — Speech</div>
+    <div class="note-text">Browser calls <code>speakTextAsync(reply)</code>. Azure TTS synthesizes speech and animates Lisa's mouth over the existing WebRTC stream.</div>
+  </div>
+  <div class="note">
+    <div class="note-num">Step 6 — Idle</div>
+    <div class="note-text"><code>avatarEventReceived</code> fires <code>SwitchedToIdle</code> when speaking ends. UI resets state. Video stream stays visible — Azure plays Lisa's idle pose.</div>
+  </div>
+</div>
+
+<!-- DETAILED EXPLANATIONS -->
+<div style="max-width:960px;margin:48px auto 0">
+
+  <div style="text-align:center;margin-bottom:32px">
+    <div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:6px">Step-by-Step Deep Dive</div>
+    <div style="font-size:13px;color:#8b82b5">How each phase works under the hood</div>
+  </div>
+
+  <!-- Step 1 -->
+  <div style="display:flex;gap:0;margin-bottom:2px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#F47920,#c85f10);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(244,121,32,0.15);border:1.5px solid rgba(244,121,32,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#F47920;flex-shrink:0">1</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">Authentication &amp; Token Fetch</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        Before any avatar or audio can work, the browser needs two things: a short-lived <strong style="color:#e2e0f0">Azure Speech auth token</strong> and <strong style="color:#e2e0f0">TURN relay credentials</strong> for WebRTC. Both requests go to Flask first — the actual Azure Speech Key is never exposed to the browser.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:#0e0b23;border:1px solid #2a2550;border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#F47920;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">GET /speech-token</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Flask calls Azure STS endpoint with the Speech Key in the header. Azure returns a JWT-style token valid for <strong style="color:#e2e0f0">10 minutes</strong>. Flask also bundles the region, avatar character, style, and voice name so the browser has everything it needs in one call.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid #2a2550;border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#F47920;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">GET /ice-token</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Flask calls the Azure TTS avatar relay endpoint. Azure returns TURN server URLs, a username, and a password. These are passed as-is to the browser and used to configure <code style="color:#a78bfa;font-size:11px">RTCPeerConnection</code> so WebRTC can punch through NAT and firewalls.</div>
+        </div>
+      </div>
+      <div style="background:#0e0b23;border:1px solid rgba(244,121,32,0.2);border-radius:10px;padding:14px">
+        <div style="font-size:11px;font-weight:600;color:#F47920;margin-bottom:6px">Azure endpoints called by Flask</div>
+        <div style="font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:#a78bfa;line-height:2">
+          POST https://{region}.api.cognitive.microsoft.com/sts/v1.0/issueToken<br>
+          GET  https://{region}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1
+        </div>
+        <div style="font-size:11px;color:#5a5380;margin-top:6px">Header: Ocp-Apim-Subscription-Key: {AZURE_SPEECH_KEY}</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:4px;height:16px;background:linear-gradient(to bottom,#c85f10,#0078d4);margin-left:2px;opacity:0.5"></div>
+
+  <!-- Step 2 -->
+  <div style="display:flex;gap:0;margin-bottom:2px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#0078d4,#005fa3);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(0,120,212,0.15);border:1.5px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#4ea8e8;flex-shrink:0">2</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">WebRTC Peer Connection Setup</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        With both tokens in hand, the browser builds a WebRTC peer connection. This is a direct media channel between the browser and Azure's avatar rendering infrastructure — Flask plays no role after this point for media.
+      </p>
+      <div style="background:#0e0b23;border:1px solid rgba(0,120,212,0.25);border-radius:10px;padding:14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:#4ea8e8;margin-bottom:8px">Sequence inside azureInit()</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,120,212,0.2);border:1px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;color:#4ea8e8;flex-shrink:0;margin-top:1px">a</div>
+            <div style="font-size:12px;color:#8b82b5;line-height:1.5"><code style="color:#a78bfa;font-size:11px">new RTCPeerConnection({ iceServers: [{ urls, username, credential }] })</code> — creates the connection using Azure TURN servers from Step 1.</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,120,212,0.2);border:1px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;color:#4ea8e8;flex-shrink:0;margin-top:1px">b</div>
+            <div style="font-size:12px;color:#8b82b5;line-height:1.5"><code style="color:#a78bfa;font-size:11px">addTransceiver("video", { direction: "recvonly" })</code> and <code style="color:#a78bfa;font-size:11px">addTransceiver("audio", { direction: "recvonly" })</code> — browser declares it will only receive, never send, media tracks.</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,120,212,0.2);border:1px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;color:#4ea8e8;flex-shrink:0;margin-top:1px">c</div>
+            <div style="font-size:12px;color:#8b82b5;line-height:1.5"><code style="color:#a78bfa;font-size:11px">new SpeechSDK.AvatarSynthesizer(speechConfig, avatarConfig)</code> — SDK is initialized with the auth token, voice, character (<em>lisa</em>), and style (<em>casual-sitting</em>). Background color is set to match the app's dark theme.</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,120,212,0.2);border:1px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;color:#4ea8e8;flex-shrink:0;margin-top:1px">d</div>
+            <div style="font-size:12px;color:#8b82b5;line-height:1.5"><code style="color:#a78bfa;font-size:11px">synthesizer.startAvatarAsync(peerConn)</code> — SDK performs the WebRTC offer/answer exchange with Azure. Azure responds with an SDP answer and ICE candidates, completing the connection.</div>
+          </div>
+        </div>
+      </div>
+      <div style="background:#0e0b23;border:1px solid #2a2550;border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:#5a5380;line-height:1.6">
+          <strong style="color:#8b82b5">Why recv-only?</strong> The avatar video is rendered entirely on Azure's servers. The browser never sends any video or audio to Azure — it only receives the rendered avatar stream. This keeps bandwidth low and offloads all rendering to the cloud.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:4px;height:16px;background:linear-gradient(to bottom,#005fa3,#22c55e);margin-left:2px;opacity:0.5"></div>
+
+  <!-- Step 3 -->
+  <div style="display:flex;gap:0;margin-bottom:2px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#22c55e,#15803d);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(34,197,94,0.12);border:1.5px solid rgba(34,197,94,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#4ade80;flex-shrink:0">3</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">Live Avatar Stream</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        Once the WebRTC handshake completes, Azure starts delivering a continuous video and audio stream to the browser. This is a real-time rendered 3D avatar — not a pre-recorded video. Azure renders Lisa's idle pose at all times and transitions to speaking animation when speech is synthesized.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div style="background:#0e0b23;border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Video Track</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Attached to <code style="color:#a78bfa;font-size:11px">&lt;video id="azure-video"&gt;</code> via <code style="color:#a78bfa;font-size:11px">srcObject</code>. Stays <code style="color:#a78bfa;font-size:11px">display:none</code> until <code style="color:#a78bfa;font-size:11px">onplaying</code> fires, then the static placeholder image is hidden and the live video takes over permanently.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Audio Track</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Attached to a hidden <code style="color:#a78bfa;font-size:11px">&lt;audio&gt;</code> element and also routed through the Web Audio API via <code style="color:#a78bfa;font-size:11px">createMediaStreamSource</code>. Dual routing ensures playback works on both mobile and desktop Chrome/Edge.</div>
+        </div>
+      </div>
+      <div style="background:#0e0b23;border:1px solid #2a2550;border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:#5a5380;line-height:1.6">
+          <strong style="color:#8b82b5">Key design rule:</strong> The video is <strong style="color:#e2e0f0">never hidden</strong> once connected. Azure streams Lisa continuously — idle when silent, speaking animation when TTS is active. Hiding the video on idle would cause a blank frame. The static <code style="color:#a78bfa;font-size:11px">images.webp</code> is only a loading placeholder used before WebRTC connects, and as a fallback on ICE failure.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:4px;height:16px;background:linear-gradient(to bottom,#15803d,#6c63ff);margin-left:2px;opacity:0.5"></div>
+
+  <!-- Step 4 -->
+  <div style="display:flex;gap:0;margin-bottom:2px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#6c63ff,#4a42c0);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(108,99,255,0.15);border:1.5px solid rgba(108,99,255,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#a78bfa;flex-shrink:0">4</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">Chat — Voice Input or Text</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        The user interacts via microphone (browser's built-in <code style="color:#a78bfa;font-size:11px">SpeechRecognition</code> API) or the text input. Either way the final message is sent to <code style="color:#a78bfa;font-size:11px">POST /chat</code> and Flask handles all the AI logic before returning a reply.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        <div style="background:#0e0b23;border:1px solid rgba(108,99,255,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Speech-to-Text (Browser)</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Uses the Web Speech API — no Azure STT, no API key required. <code style="color:#a78bfa;font-size:11px">recognition.continuous = false</code> and <code style="color:#a78bfa;font-size:11px">interimResults = true</code> so partial transcripts appear in real time. On silence/no-speech the browser fires <code style="color:#a78bfa;font-size:11px">onend</code> without a final result — the app detects this and automatically restarts the mic to keep listening.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid rgba(108,99,255,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Flask /chat Processing</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5;margin-bottom:8px">Before the message reaches the LangChain agent, Flask automatically prepends two context tags:</div>
+          <div style="font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:#4ade80;background:#070510;border-radius:8px;padding:10px;line-height:1.8">
+            [Today's date: 2024-01-15] {user_message}<br>
+            [User's current location: Paris, France (48.8566,2.3522)] {user_message}
+          </div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5;margin-top:8px">Location is resolved by reverse-geocoding the lat/lng the browser sends alongside the message. This makes the agent location-aware without the user needing to state their city explicitly.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid rgba(108,99,255,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">LangChain Agent</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">The agent has access to Google Places tools (nearby search, place details) and maintains <strong style="color:#e2e0f0">per-session memory</strong> keyed by <code style="color:#a78bfa;font-size:11px">session_id</code> — a random ID generated once per page load. This means follow-up questions work naturally: "What about the second one?" refers to the previous list without the user restating context.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:4px;height:16px;background:linear-gradient(to bottom,#4a42c0,#0078d4);margin-left:2px;opacity:0.5"></div>
+
+  <!-- Step 5 -->
+  <div style="display:flex;gap:0;margin-bottom:2px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#0078d4,#005fa3);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(0,120,212,0.15);border:1.5px solid rgba(0,120,212,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#4ea8e8;flex-shrink:0">5</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">Speech Synthesis — Avatar Speaks</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        Once the reply text arrives, the browser calls <code style="color:#a78bfa;font-size:11px">speakTextAsync(text)</code> on the synthesizer. Azure receives the text, synthesizes it with the configured Neural TTS voice (<em>en-US-JennyNeural</em>), and delivers the audio via the existing WebRTC stream while simultaneously animating Lisa's mouth movements.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:#0e0b23;border:1px solid rgba(0,120,212,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ea8e8;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Critical: Immediate Resolution</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5"><code style="color:#a78bfa;font-size:11px">speakTextAsync()</code> resolves its promise as soon as the speech request is <strong style="color:#e2e0f0">queued</strong> — not when Lisa finishes speaking. This means you cannot use <code style="color:#a78bfa;font-size:11px">await speakTextAsync()</code> to detect when speech ends. Any code placed after it runs while Lisa is still talking.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid rgba(0,120,212,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ea8e8;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Text Preprocessing</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">Before passing to Azure TTS, the text is cleaned: markdown images, links, headings, bold/italic markers, and URLs are stripped. The result is truncated to 700 characters so Lisa never attempts to speak an entire travel guide aloud.</div>
+        </div>
+      </div>
+      <div style="background:#0e0b23;border:1px solid rgba(0,120,212,0.2);border-radius:10px;padding:14px">
+        <div style="font-size:11px;font-weight:700;color:#4ea8e8;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Fallback — Browser TTS</div>
+        <div style="font-size:12px;color:#8b82b5;line-height:1.5">If <code style="color:#a78bfa;font-size:11px">azureSpeak()</code> returns <code style="color:#a78bfa;font-size:11px">false</code> (synthesizer not ready, WebRTC not connected, or exception), the app falls back to the browser's built-in <code style="color:#a78bfa;font-size:11px">SpeechSynthesisUtterance</code>. The app prefers a male English voice so it sounds consistent. This ensures the user always gets a spoken response even if the Azure connection hasn't established yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width:4px;height:16px;background:linear-gradient(to bottom,#005fa3,#22c55e);margin-left:2px;opacity:0.5"></div>
+
+  <!-- Step 6 -->
+  <div style="display:flex;gap:0;margin-bottom:48px;align-items:stretch">
+    <div style="width:4px;background:linear-gradient(to bottom,#22c55e,#15803d);border-radius:4px 0 0 4px;flex-shrink:0"></div>
+    <div style="background:#13102e;border:1px solid #2a2550;border-left:none;border-radius:0 14px 14px 0;padding:24px 28px;flex:1">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(34,197,94,0.12);border:1.5px solid rgba(34,197,94,0.4);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#4ade80;flex-shrink:0">6</div>
+        <div style="font-size:15px;font-weight:700;color:#fff">Idle State — After Speaking</div>
+      </div>
+      <p style="font-size:13px;color:#b0aac8;line-height:1.7;margin-bottom:14px">
+        When Lisa finishes speaking, Azure fires the <code style="color:#a78bfa;font-size:11px">avatarEventReceived</code> callback with a description containing <em>SwitchedToIdle</em> or <em>TalkingEnded</em>. This is the only reliable signal that speech has finished. The UI resets — status badge clears, waveform stops, stop button hides — but the video stream is untouched.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div style="background:#0e0b23;border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">What triggers it</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">The event description is checked for three substrings: <code style="color:#a78bfa;font-size:11px">switchedtoidle</code>, <code style="color:#a78bfa;font-size:11px">talkingended</code>, or <code style="color:#a78bfa;font-size:11px">idle</code>. Azure may change exact event names between SDK versions, so checking all three makes the handler resilient.</div>
+        </div>
+        <div style="background:#0e0b23;border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px">
+          <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">What does NOT happen</div>
+          <div style="font-size:12px;color:#8b82b5;line-height:1.5">The video element is <strong style="color:#e2e0f0">not hidden</strong>. Azure continues streaming Lisa's idle pose animation over WebRTC. Hiding the video on idle would produce a blank frame — an early bug that was fixed by removing all video display toggling from this handler.</div>
+        </div>
+      </div>
+      <div style="background:#0e0b23;border:1px solid rgba(34,197,94,0.2);border-radius:10px;padding:14px">
+        <div style="font-size:11px;font-weight:700;color:#4ade80;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">ICE Failure — The Only True Fallback</div>
+        <div style="font-size:12px;color:#8b82b5;line-height:1.5">The video is only ever hidden in one scenario: <code style="color:#a78bfa;font-size:11px">peerConn.iceConnectionState</code> becomes <code style="color:#a78bfa;font-size:11px">failed</code> or <code style="color:#a78bfa;font-size:11px">disconnected</code>. This means the WebRTC connection itself dropped — likely a network interruption. At that point the static <code style="color:#a78bfa;font-size:11px">images.webp</code> placeholder is shown, <code style="color:#a78bfa;font-size:11px">azureReady</code> is set to <code style="color:#a78bfa;font-size:11px">false</code>, and browser TTS takes over for any subsequent replies.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

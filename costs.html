@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Azure Cost Breakdown — Month to Date</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0e0b23;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #e2e0f0;
+    padding: 36px 20px 60px;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 960px; margin: 0 auto; }
+
+  h1 { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .meta { font-size: 13px; color: #8b82b5; margin-bottom: 36px; }
+  .meta span { color: #F47920; font-weight: 600; }
+
+  /* ── Summary cards ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 36px;
+  }
+  .stat-card {
+    background: #13102e;
+    border: 1px solid #2a2550;
+    border-radius: 14px;
+    padding: 18px 16px;
+    text-align: center;
+  }
+  .stat-card.total {
+    border-color: #F47920;
+    box-shadow: 0 0 20px rgba(244,121,32,0.15);
+  }
+  .stat-icon { font-size: 22px; margin-bottom: 8px; display: block; }
+  .stat-value { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .stat-value.orange { color: #F47920; }
+  .stat-label { font-size: 11px; color: #8b82b5; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* ── Section header ── */
+  .section-title {
+    font-size: 13px; font-weight: 700; color: #fff;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 14px; margin-top: 32px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: ""; flex: 1; height: 1px; background: #2a2550;
+  }
+
+  /* ── Service breakdown ── */
+  .service-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+
+  .service-row {
+    background: #13102e;
+    border: 1px solid #2a2550;
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .service-row.highlight { border-color: rgba(244,121,32,0.35); }
+
+  .service-icon { font-size: 20px; flex-shrink: 0; width: 32px; text-align: center; }
+
+  .service-info { flex: 1; min-width: 0; }
+  .service-name { font-size: 14px; font-weight: 600; color: #e2e0f0; margin-bottom: 3px; }
+  .service-sub  { font-size: 11px; color: #8b82b5; }
+
+  .service-bar-wrap { flex: 2; min-width: 0; }
+  .service-bar-bg {
+    background: #1e1a42; border-radius: 4px; height: 6px; overflow: hidden;
+  }
+  .service-bar-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(to right, #6c63ff, #a78bfa);
+    transition: width 0.3s;
+  }
+  .service-bar-fill.orange { background: linear-gradient(to right, #F47920, #ffa94d); }
+  .service-bar-fill.blue   { background: linear-gradient(to right, #0078d4, #4ea8e8); }
+  .service-bar-fill.green  { background: linear-gradient(to right, #22c55e, #4ade80); }
+  .service-bar-fill.red    { background: linear-gradient(to right, #ef4444, #f87171); }
+
+  .service-cost {
+    font-size: 15px; font-weight: 700; color: #fff;
+    white-space: nowrap; min-width: 80px; text-align: right;
+  }
+  .service-pct { font-size: 11px; color: #8b82b5; text-align: right; }
+
+  /* ── Resource table ── */
+  .resource-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #13102e;
+    border: 1px solid #2a2550;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .resource-table th {
+    background: #1a1640;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: #8b82b5; padding: 10px 14px; text-align: left;
+    border-bottom: 1px solid #2a2550;
+  }
+  .resource-table td {
+    padding: 10px 14px; font-size: 13px;
+    border-bottom: 1px solid rgba(42,37,80,0.5);
+    vertical-align: middle;
+  }
+  .resource-table tr:last-child td { border-bottom: none; }
+  .resource-table tr:hover td { background: rgba(108,99,255,0.05); }
+  .resource-table .res-name { font-weight: 600; color: #e2e0f0; }
+  .resource-table .res-svc  { color: #8b82b5; font-size: 12px; }
+  .resource-table .res-cost { font-weight: 700; text-align: right; white-space: nowrap; }
+  .resource-table .res-rg   { color: #8b82b5; font-size: 12px; }
+
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 8px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge-ai      { background: rgba(244,121,32,0.15); color: #F47920; border: 1px solid rgba(244,121,32,0.3); }
+  .badge-mitko   { background: rgba(108,99,255,0.15); color: #a78bfa; border: 1px solid rgba(108,99,255,0.3); }
+  .badge-sval    { background: rgba(34,197,94,0.1);   color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+
+  /* ── Travel project box ── */
+  .project-box {
+    background: #13102e;
+    border: 1.5px solid #F47920;
+    border-radius: 14px;
+    padding: 20px 22px;
+    box-shadow: 0 0 20px rgba(244,121,32,0.1);
+    margin-bottom: 8px;
+  }
+  .project-box-title {
+    font-size: 14px; font-weight: 700; color: #F47920;
+    margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .project-resources {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;
+  }
+  .proj-res {
+    background: #0e0b23; border: 1px solid #2a2550; border-radius: 10px; padding: 12px 14px;
+  }
+  .proj-res-name { font-size: 13px; font-weight: 600; color: #e2e0f0; margin-bottom: 2px; }
+  .proj-res-svc  { font-size: 11px; color: #8b82b5; margin-bottom: 6px; }
+  .proj-res-cost { font-size: 16px; font-weight: 700; color: #fff; }
+  .proj-res-cost.big { color: #F47920; }
+
+  /* ── Cost note ── */
+  .note-box {
+    background: rgba(108,99,255,0.07);
+    border: 1px solid rgba(108,99,255,0.25);
+    border-radius: 10px; padding: 14px 16px;
+    font-size: 12px; color: #8b82b5; line-height: 1.6;
+    margin-top: 12px;
+  }
+  .note-box strong { color: #e2e0f0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Azure Cost Breakdown</h1>
+  <p class="meta">Subscription: <span>1fa44ca8-b012-44b3-9618-da63389b9733</span> &nbsp;&middot;&nbsp; Period: <span>March 2026 (Month to Date)</span> &nbsp;&middot;&nbsp; Currency: <span>EUR</span></p>
+
+  <!-- SUMMARY CARDS -->
+  <div class="summary-grid">
+    <div class="stat-card total">
+      <span class="stat-icon">&#128176;</span>
+      <div class="stat-value orange">&euro;77.35</div>
+      <div class="stat-label">Total MTD</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#129302;</span>
+      <div class="stat-value">&euro;57.35</div>
+      <div class="stat-label">AI / Foundry</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#9729;</span>
+      <div class="stat-value">&euro;7.87</div>
+      <div class="stat-label">Databricks</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#128230;</span>
+      <div class="stat-value">&euro;5.53</div>
+      <div class="stat-label">Container Registry</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#127760;</span>
+      <div class="stat-value">&euro;5.21</div>
+      <div class="stat-label">App Service</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-icon">&#128280;</span>
+      <div class="stat-value">&euro;1.40</div>
+      <div class="stat-label">VMs + Network + Storage</div>
+    </div>
+  </div>
+
+  <!-- SERVICE BREAKDOWN -->
+  <div class="section-title">By Service</div>
+  <div class="service-list">
+
+    <div class="service-row highlight">
+      <div class="service-icon">&#129302;</div>
+      <div class="service-info">
+        <div class="service-name">Foundry Tools</div>
+        <div class="service-sub">azureaimit &nbsp;&middot;&nbsp; rg: ai</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill orange" style="width:71.7%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;55.43</div>
+        <div class="service-pct">71.7%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#9729;</div>
+      <div class="service-info">
+        <div class="service-name">Azure Databricks</div>
+        <div class="service-sub">dbrmitko &nbsp;&middot;&nbsp; rg: ai</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill blue" style="width:10.2%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;7.87</div>
+        <div class="service-pct">10.2%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#128230;</div>
+      <div class="service-info">
+        <div class="service-name">Container Registry</div>
+        <div class="service-sub">crmitko · acrsvaliceni · testjira · travelbotacr</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill" style="width:7.2%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;5.53</div>
+        <div class="service-pct">7.2%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#127760;</div>
+      <div class="service-info">
+        <div class="service-name">Azure App Service</div>
+        <div class="service-sub">asp-ai-b158 · asp-ai-b1d2 · svaliceni-plan · travelbot-plan-eu</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill" style="width:6.7%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;5.21</div>
+        <div class="service-pct">6.7%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#128200;</div>
+      <div class="service-info">
+        <div class="service-name">Foundry Models</div>
+        <div class="service-sub">openmit · travelbot-openai-eu &nbsp;&middot;&nbsp; rg: ai</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill green" style="width:2.5%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;1.92</div>
+        <div class="service-pct">2.5%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#128421;</div>
+      <div class="service-info">
+        <div class="service-name">Virtual Machines</div>
+        <div class="service-sub">Databricks worker nodes &nbsp;&middot;&nbsp; rg: mitkoman</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill red" style="width:1.3%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;0.99</div>
+        <div class="service-pct">1.3%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#128190;</div>
+      <div class="service-info">
+        <div class="service-name">Storage</div>
+        <div class="service-sub">Databricks scratch + container volumes &nbsp;&middot;&nbsp; rg: mitkoman</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill" style="width:0.4%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;0.32</div>
+        <div class="service-pct">0.4%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#128279;</div>
+      <div class="service-info">
+        <div class="service-name">Virtual Network</div>
+        <div class="service-sub">Public IPs for Databricks nodes &nbsp;&middot;&nbsp; rg: mitkoman</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill" style="width:0.12%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;0.09</div>
+        <div class="service-pct">0.1%</div>
+      </div>
+    </div>
+
+    <div class="service-row">
+      <div class="service-icon">&#9889;</div>
+      <div class="service-info">
+        <div class="service-name">Logic Apps + Bandwidth</div>
+        <div class="service-sub">outlook-email-to-blob · jira-assumptions-email · egress</div>
+      </div>
+      <div class="service-bar-wrap">
+        <div class="service-bar-bg"><div class="service-bar-fill" style="width:0.03%"></div></div>
+      </div>
+      <div>
+        <div class="service-cost">&euro;0.02</div>
+        <div class="service-pct">&lt;0.1%</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOUNDRY TOOLS BREAKDOWN -->
+  <div class="section-title">Foundry Tools Breakdown — azureaimit</div>
+
+  <div style="background:#13102e;border:1.5px solid rgba(244,121,32,0.4);border-radius:14px;padding:22px 24px;margin-bottom:12px;box-shadow:0 0 24px rgba(244,121,32,0.1)">
+    <div style="font-size:13px;font-weight:700;color:#F47920;margin-bottom:18px;display:flex;align-items:center;gap:8px">
+      &#129302; Azure Speech Service — 2 active meters
+    </div>
+
+    <!-- Meter 1: Streaming -->
+    <div style="background:#0e0b23;border:1px solid rgba(244,121,32,0.25);border-radius:12px;padding:18px 20px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;font-weight:700;color:#F47920;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Standard Streaming Minute</div>
+          <div style="font-size:13px;color:#b0aac8;line-height:1.6;margin-bottom:10px">
+            This is the <strong style="color:#fff">Azure Talking Avatar WebRTC stream</strong> — billed per minute Lisa is connected and streaming to a browser, whether speaking or idle. Every open browser tab counts.
+          </div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Minutes used</div>
+              <div style="font-size:18px;font-weight:700;color:#fff">127.67 min</div>
+              <div style="font-size:11px;color:#8b82b5">~2h 7m total</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Rate</div>
+              <div style="font-size:18px;font-weight:700;color:#fff">&euro;0.433 / min</div>
+              <div style="font-size:11px;color:#8b82b5">&euro;26 / hour</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Cost MTD</div>
+              <div style="font-size:22px;font-weight:700;color:#F47920">&euro;55.31</div>
+              <div style="font-size:11px;color:#8b82b5">99.8% of Foundry Tools</div>
+            </div>
+          </div>
+        </div>
+        <div style="width:180px;flex-shrink:0">
+          <div style="background:#13102e;border:1px solid #2a2550;border-radius:10px;padding:12px;text-align:center">
+            <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Daily avg at this rate</div>
+            <div style="font-size:15px;font-weight:700;color:#fff">&euro;75 / day</div>
+            <div style="font-size:11px;color:#8b82b5;margin-top:4px">if streamed 24h</div>
+            <div style="margin-top:10px;font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em">Monthly projection</div>
+            <div style="font-size:15px;font-weight:700;color:#ef4444">&euro;~2,270 / mo</div>
+            <div style="font-size:10px;color:#8b82b5;margin-top:2px">continuous 24/7 stream</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:#13102e;border:1px solid #2a2550;border-radius:8px;padding:12px">
+        <div style="font-size:11px;color:#5a5380;line-height:1.7">
+          <strong style="color:#e2e0f0">Cost driver:</strong> The stream runs from the moment <code style="color:#a78bfa;font-size:11px">startAvatarAsync()</code> is called until the page is closed or ICE connection drops. Idle time (Lisa sitting quietly) costs exactly the same as speaking time. Each browser session = new stream = new billing.
+        </div>
+      </div>
+    </div>
+
+    <!-- Meter 2: TTS Characters -->
+    <div style="background:#0e0b23;border:1px solid rgba(108,99,255,0.25);border-radius:12px;padding:18px 20px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">S1 Neural Text To Speech Characters</div>
+          <div style="font-size:13px;color:#b0aac8;line-height:1.6;margin-bottom:10px">
+            Billed per character synthesized when Lisa speaks a reply. The <code style="color:#a78bfa;font-size:11px">speakTextAsync()</code> call sends text to Azure Neural TTS — every character in every spoken reply is counted here.
+          </div>
+          <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Characters used</div>
+              <div style="font-size:18px;font-weight:700;color:#fff">9,472 chars</div>
+              <div style="font-size:11px;color:#8b82b5">~19 average replies</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Rate</div>
+              <div style="font-size:18px;font-weight:700;color:#fff">&euro;13 / 1M chars</div>
+              <div style="font-size:11px;color:#8b82b5">S1 Neural tier</div>
+            </div>
+            <div>
+              <div style="font-size:10px;color:#5a5380;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px">Cost MTD</div>
+              <div style="font-size:22px;font-weight:700;color:#a78bfa">&euro;0.12</div>
+              <div style="font-size:11px;color:#8b82b5">0.2% of Foundry Tools</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px;background:#13102e;border:1px solid #2a2550;border-radius:8px;padding:12px">
+        <div style="font-size:11px;color:#5a5380;line-height:1.7">
+          <strong style="color:#e2e0f0">Practically free:</strong> Even at heavy conversational usage (hundreds of replies per day), Neural TTS characters cost a fraction of the streaming minute charge. The 700-character truncation in <code style="color:#a78bfa;font-size:11px">cleanForSpeech()</code> caps each reply's TTS cost at ~&euro;0.009.
+        </div>
+      </div>
+    </div>
+
+    <!-- Cost insight -->
+    <div style="margin-top:14px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:10px;padding:14px">
+      <div style="font-size:11px;font-weight:700;color:#f87171;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">&#9888; Cost Insight — Streaming Minutes dominate</div>
+      <div style="font-size:12px;color:#8b82b5;line-height:1.7">
+        <strong style="color:#e2e0f0">99.8% of the Foundry Tools cost is streaming time, not TTS usage.</strong> The avatar stream is always-on once a session starts — idle pose costs the same as speaking. To reduce costs consider: (1) adding a session timeout that calls <code style="color:#a78bfa;font-size:11px">synthesizer.close()</code> after N minutes of inactivity, or (2) lazy-init the avatar only on first user interaction instead of on page load.
+      </div>
+    </div>
+  </div>
+
+  <!-- TRAVEL PROJECT RESOURCES -->
+  <div class="section-title">Travel Project Resources (rg: ai)</div>
+  <div class="project-box">
+    <div class="project-box-title">&#9992;&#65039; avatartravel.azurewebsites.net</div>
+    <div class="project-resources">
+      <div class="proj-res">
+        <div class="proj-res-name">travelbotacr</div>
+        <div class="proj-res-svc">Container Registry</div>
+        <div class="proj-res-cost">&euro;0.2559</div>
+      </div>
+      <div class="proj-res">
+        <div class="proj-res-name">travelbot-plan-eu</div>
+        <div class="proj-res-svc">App Service Plan</div>
+        <div class="proj-res-cost">&euro;0.0152</div>
+      </div>
+      <div class="proj-res">
+        <div class="proj-res-name">avatartravel</div>
+        <div class="proj-res-svc">App Service (webapp)</div>
+        <div class="proj-res-cost">&euro;&lt;0.001</div>
+      </div>
+      <div class="proj-res">
+        <div class="proj-res-name">travelbot-openai-eu</div>
+        <div class="proj-res-svc">Foundry Models (OpenAI)</div>
+        <div class="proj-res-cost">&euro;0.0485</div>
+      </div>
+      <div class="proj-res">
+        <div class="proj-res-name">testtravel / travelboteu</div>
+        <div class="proj-res-svc">App Service (other envs)</div>
+        <div class="proj-res-cost">&euro;&lt;0.001</div>
+      </div>
+    </div>
+    <div class="note-box" style="margin-top:14px">
+      <strong>Travel project total MTD: ~&euro;0.32</strong> &nbsp;&mdash;&nbsp; The avatar webapp itself is nearly free this month because <strong>Azure Cognitive Services Talking Avatar</strong> (Speech Key on <code style="color:#a78bfa;font-size:11px">azureaimit</code>) is billed under <strong>Foundry Tools</strong> alongside all other AI workloads. Avatar token requests and TTS synthesis consume from that shared pool.
+    </div>
+  </div>
+
+  <!-- FULL RESOURCE TABLE -->
+  <div class="section-title">All Resources</div>
+  <table class="resource-table">
+    <thead>
+      <tr>
+        <th>Resource</th>
+        <th>Service</th>
+        <th>Resource Group</th>
+        <th style="text-align:right">Cost (EUR)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="res-name">azureaimit</td>
+        <td class="res-svc">Foundry Tools (Azure AI)</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost" style="color:#F47920">&euro;55.4328</td>
+      </tr>
+      <tr>
+        <td class="res-name">dbrmitko</td>
+        <td class="res-svc">Azure Databricks</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;7.8672</td>
+      </tr>
+      <tr>
+        <td class="res-name">crmitko</td>
+        <td class="res-svc">Container Registry</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;3.5137</td>
+      </tr>
+      <tr>
+        <td class="res-name">asp-ai-b158</td>
+        <td class="res-svc">App Service Plan</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;2.1357</td>
+      </tr>
+      <tr>
+        <td class="res-name">asp-ai-b1d2</td>
+        <td class="res-svc">App Service Plan</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;2.1357</td>
+      </tr>
+      <tr>
+        <td class="res-name">openmit</td>
+        <td class="res-svc">Foundry Models (OpenAI)</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;1.8687</td>
+      </tr>
+      <tr>
+        <td class="res-name">svaliceni-plan</td>
+        <td class="res-svc">App Service Plan</td>
+        <td><span class="badge badge-sval">svaliceni</span></td>
+        <td class="res-cost">&euro;0.9279</td>
+      </tr>
+      <tr>
+        <td class="res-name">acrsvaliceni</td>
+        <td class="res-svc">Container Registry</td>
+        <td><span class="badge badge-sval">svaliceni</span></td>
+        <td class="res-cost">&euro;0.8782</td>
+      </tr>
+      <tr>
+        <td class="res-name">testjira</td>
+        <td class="res-svc">Container Registry</td>
+        <td><span class="badge badge-mitko">mitkoman</span></td>
+        <td class="res-cost">&euro;0.8782</td>
+      </tr>
+      <tr>
+        <td class="res-name">dbstoragel7e3a3fc375d6</td>
+        <td class="res-svc">Storage (Databricks)</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.2250</td>
+      </tr>
+      <tr>
+        <td class="res-name">travelbotacr</td>
+        <td class="res-svc">Container Registry</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.2559</td>
+      </tr>
+      <tr>
+        <td class="res-name">Databricks VM nodes (×14)</td>
+        <td class="res-svc">Virtual Machines</td>
+        <td><span class="badge badge-mitko">mitkoman</span></td>
+        <td class="res-cost">&euro;0.6285</td>
+      </tr>
+      <tr>
+        <td class="res-name">VM container volumes (×14)</td>
+        <td class="res-svc">Storage (managed disks)</td>
+        <td><span class="badge badge-mitko">mitkoman</span></td>
+        <td class="res-cost">&euro;0.0935</td>
+      </tr>
+      <tr>
+        <td class="res-name">Public IPs (×14)</td>
+        <td class="res-svc">Virtual Network</td>
+        <td><span class="badge badge-mitko">mitkoman</span></td>
+        <td class="res-cost">&euro;0.0937</td>
+      </tr>
+      <tr>
+        <td class="res-name">outlook-email-to-blob</td>
+        <td class="res-svc">Logic Apps</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.0189</td>
+      </tr>
+      <tr>
+        <td class="res-name">jira-assumptions-email</td>
+        <td class="res-svc">Logic Apps</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.0016</td>
+      </tr>
+      <tr>
+        <td class="res-name">travelbot-openai-eu</td>
+        <td class="res-svc">Foundry Models (OpenAI)</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.0485</td>
+      </tr>
+      <tr>
+        <td class="res-name">travelbot-plan-eu</td>
+        <td class="res-svc">App Service Plan</td>
+        <td><span class="badge badge-ai">ai</span></td>
+        <td class="res-cost">&euro;0.0152</td>
+      </tr>
+      <tr>
+        <td class="res-name">samitkoman1 + egress</td>
+        <td class="res-svc">Storage + Bandwidth</td>
+        <td><span class="badge badge-mitko">mitkoman</span></td>
+        <td class="res-cost">&euro;0.3185</td>
+      </tr>
+      <tr style="background:rgba(244,121,32,0.04)">
+        <td class="res-name" colspan="3" style="font-weight:700;color:#F47920;text-align:right;padding-right:24px">Total Month to Date</td>
+        <td class="res-cost" style="color:#F47920;font-size:16px">&euro;77.35</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note-box" style="margin-top:16px">
+    <strong>Largest cost driver: Foundry Tools (azureaimit) at &euro;55.43 (71.7% of total).</strong> This is the Azure AI Foundry hub resource — it covers Azure Cognitive Services usage including Speech (Talking Avatar tokens, TTS synthesis, STS auth), plus any other AI Foundry workloads running on that resource. If avatar usage is high, it will appear here. Second largest is Databricks at &euro;7.87 — worker VM node time for ML jobs. Container Registries and App Service Plans are fixed monthly charges regardless of traffic.
+  </div>
+
+</div>
+</body>
+</html>

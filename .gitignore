@@ -1,0 +1,7 @@
+.env
+*.zip
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+varad/
