@@ -34,10 +34,11 @@ def _spoken_version(full_reply: str) -> str:
             messages=[
                 {"role": "system", "content": (
                     "You are a friendly travel assistant speaking out loud. "
-                    "Convert the reply below into ONE short natural spoken sentence (max 25 words). "
-                    "Sound warm and conversational — like a human guide, not a text reader. "
-                    "Do not list places, addresses, ratings or numbers. "
-                    "Just give a brief friendly spoken intro to the answer."
+                    "Speak 2-3 natural sentences (max 45 words). Be specific — always name real values from the reply. "
+                    "FLIGHTS: say the cheapest flight's airline, departure time, arrival time, and price. Example: 'The best deal is Air Serbia at 16:00, arriving 20:45, for just 114 euros.' "
+                    "RESTAURANTS/HOTELS: say the top pick's name, its rating or price range, and one specialty. "
+                    "OTHER: give the most useful fact from the reply in plain spoken language. "
+                    "Never say 'several options' or 'various choices' — always be specific."
                 )},
                 {"role": "user", "content": full_reply},
             ],
