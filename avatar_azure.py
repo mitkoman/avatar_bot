@@ -12,42 +12,64 @@ Required env vars:
 import os
 import requests
 from datetime import datetime
+import re as _re
 from flask import Flask, request, jsonify, send_from_directory, Response
 from dotenv import load_dotenv
-from openai import AzureOpenAI
 from agent import PlacesCapture, CalendarCapture, get_agent, GOOGLE_MAPS_KEY
 
 load_dotenv()
 
-_openai = AzureOpenAI(
-    api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
-    azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
-    api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-)
-_DEPLOY = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o-mini")
+def _to_ssml(text: str, voice: str) -> str:
+    """Wrap plain text in SSML with natural prosody."""
+    # Escape XML special chars
+    text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    return (
+        f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
+        f'<voice name="{voice}"><prosody rate="0%" pitch="0%">{text}</prosody></voice></speak>'
+    )
+
 
 def _spoken_version(full_reply: str) -> str:
-    """Turn the full agent reply into one short natural spoken sentence."""
-    try:
-        r = _openai.chat.completions.create(
-            model=_DEPLOY,
-            messages=[
-                {"role": "system", "content": (
-                    "You are a friendly travel assistant speaking out loud. "
-                    "Speak 2-3 natural sentences (max 45 words). Be specific — always name real values from the reply. "
-                    "FLIGHTS: say the cheapest flight's airline, departure time, arrival time, and price. Example: 'The best deal is Air Serbia at 16:00, arriving 20:45, for just 114 euros.' "
-                    "RESTAURANTS/HOTELS: say the top pick's name, its rating or price range, and one specialty. "
-                    "OTHER: give the most useful fact from the reply in plain spoken language. "
-                    "Never say 'several options' or 'various choices' — always be specific."
-                )},
-                {"role": "user", "content": full_reply},
-            ],
-            max_tokens=60,
-            temperature=0.6,
-        )
-        return r.choices[0].message.content.strip()
-    except Exception:
-        return ""
+    """Convert reply to SSML — detects flights and summarises key facts naturally."""
+    # Split into per-flight blocks by numbered items (handles multi-line entries)
+    raw_blocks = _re.split(r'(?=\n?\d+\.\s)', full_reply)
+    flight_blocks = [b for b in raw_blocks if _re.search(r'\d+\.\s', b) and _re.search(r'\d+(?:\.\d+)?\s*EUR', b, _re.IGNORECASE)]
+
+    if flight_blocks:
+        count = len(flight_blocks)
+        parts = []
+        for block in flight_blocks[:3]:
+            price  = _re.search(r'(\d+(?:\.\d+)?)\s*EUR', block, _re.IGNORECASE)
+            depart = _re.search(r'(?:Departure|Departs?)[*:\s]+(\d{1,2}:\d{2})', block, _re.IGNORECASE)
+            if not depart:
+                depart = _re.search(r'\b(\d{1,2}:\d{2})\b', block)
+            p = f'<emphasis level="moderate">{price.group(1)} euros</emphasis>' if price else ''
+            d = f'departing at <say-as interpret-as="time" format="hm">{depart.group(1)}</say-as>' if depart else ''
+            if p or d:
+                parts.append(', '.join(filter(None, [p, d])))
+        if parts:
+            labels = ['First', 'Second', 'Third']
+            spoken_parts = [f'{labels[i]} option costs {parts[i]}' for i in range(len(parts))]
+            inner = (
+                f'You have {count} {"option" if count == 1 else "options"}.'
+                f'<break time="400ms"/>'
+                + '<break time="300ms"/>'.join(spoken_parts) + '.'
+            )
+            return (
+                f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">'
+                f'<voice name="{SPEECH_VOICE}"><prosody rate="-5%" pitch="0%">{inner}</prosody></voice></speak>'
+            )
+
+    # Default: strip markdown, take first 2 sentences, wrap in SSML
+    text = _re.sub(r'!\[[^\]]*\]\([^)]+\)', '', full_reply)
+    text = _re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    text = _re.sub(r'[#*_`]', '', text)
+    text = _re.sub(r'https?://\S+', '', text)
+    text = _re.sub(r'\n+', ' ', text).strip()
+    sentences = _re.split(r'(?<=[.!?])\s+', text)
+    picked = [s.strip() for s in sentences if len(s.strip()) > 20][:2]
+    plain = ' '.join(picked)[:300]
+    return _to_ssml(plain, SPEECH_VOICE)
 
 app = Flask(__name__)
 
@@ -58,7 +80,7 @@ SPEECH_KEY    = os.environ.get("AZURE_SPEECH_KEY", "")
 SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION", "eastus")
 AVATAR_CHAR   = os.environ.get("AVATAR_CHARACTER", "lisa")
 AVATAR_STYLE  = os.environ.get("AVATAR_STYLE", "casual-sitting")
-SPEECH_VOICE  = os.environ.get("SPEECH_VOICE", "en-US-JennyNeural")
+SPEECH_VOICE  = os.environ.get("SPEECH_VOICE", "en-US-AvaMultilingualNeural")
 
 
 def _speech_headers():
@@ -141,6 +163,7 @@ def chat():
     if lat and lng:
         city = _reverse_geocode(lat, lng)
         user_input = f"[User's current location: {city} ({lat:.4f},{lng:.4f})] {user_input}"
+
     try:
         capture  = PlacesCapture()
         cal      = CalendarCapture()
@@ -660,7 +683,12 @@ async function azureSpeak(text) {
     setState("speaking");
     stopBtn.classList.add("visible");
     startWave([124, 111, 247]);
-    await synthesizer.speakTextAsync(text);
+    const isSSML = text.trimStart().startsWith("<speak");
+    if (isSSML) {
+      await synthesizer.speakSsmlAsync(text);
+    } else {
+      await synthesizer.speakTextAsync(text);
+    }
     return true;
   } catch(e) {
     console.warn("azureSpeak failed:", e);
@@ -746,7 +774,7 @@ async function sendToBot(text) {
   setState("thinking");
   startWave([255, 167, 38]);
   try {
-    const res  = await fetch("/chat", {
+    const res   = await fetch("/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, session_id: SESSION_ID }),
@@ -755,10 +783,9 @@ async function sendToBot(text) {
     const reply = data.reply || "I didn\u2019t get that, please try again.";
     subtitleEl.textContent = reply.length > 220 ? reply.slice(0, 220) + "\u2026" : reply;
     stopWave();
-
-    const clean  = data.speak || cleanForSpeech(reply);
-    const spoken = await azureSpeak(clean);
-    if (!spoken) speakFallback(clean);          // fallback to browser TTS
+    const speak     = (data.speak && data.speak.trim()) ? data.speak : cleanForSpeech(reply);
+    const spoken    = await azureSpeak(speak);
+    if (!spoken) speakFallback(speak.replace(/<[^>]+>/g, ''));
   } catch(e) {
     setState(""); stopWave();
     subtitleEl.textContent = "Connection error. Please try again.";
